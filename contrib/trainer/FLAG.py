@@ -14,7 +14,7 @@ from federatedscope.core.trainers.context import CtxVar
 from federatedscope.gfl.loss.vat import VATLoss
 from federatedscope.gfl.loss.suploss import SupConLoss
 from federatedscope.core.trainers import GeneralTorchTrainer
-from GCL.models import DualBranchContrast
+from GCL.models import DualBranchContrast,SingleBranchContrast
 import GCL.losses as L
 import GCL.augmentors as A
 from GCL.models.contrast_model import WithinEmbedContrast
@@ -44,7 +44,7 @@ class FGCLTrainer1(NodeFullBatchTrainer):
         self.state = 0
         # self.aug = GCNConv(config.)
         self.cos = torch.nn.CosineSimilarity(dim=-1)
-        self.contrast_model = DualBranchContrast(loss=L.InfoNCE(tau=0.1), mode='L2L').to(device)
+        self.contrast_model = SingleBranchContrast(loss=L.InfoNCE(tau=0.1), mode='L2L').to(device)
         self.withcontrast_model = WithinEmbedContrast(loss=L.BarlowTwins()).to(device)
         self.augWeak = A.Compose([A.EdgeRemoving(pe=0.3), A.FeatureMasking(pf=0.3)])
         self.augStrongF = A.Compose([A.EdgeRemoving(pe=0.8), A.FeatureMasking(pf=0.5)])
@@ -123,13 +123,12 @@ class FGCLTrainer1(NodeFullBatchTrainer):
 
         struct_kd = com_distillation_loss(pred_aug_global, pred_aug_local, adj_orig, adj_orig, 3)
         simi_kd_loss = simi_kd(pred_aug_global, pred_aug_local, batch.edge_index, 4)
+
         # rkd_Loss = rkd_loss(pred_aug_local , pred_aug_global)
-
-        # loss3 = self.contrast_model(globalOne, now)
-
+        # "tag"
         cc_loss = self.ccKD(pred_aug_local, pred_aug_global)
-
-
+        loss3 = simi_kd_2(adj_orig,pred_aug_local,pred_aug_global)
+        loss_ff = edge_distribution_high(batch.edge_index,pred_aug_local,pred_aug_global)
         globalOne = globalOne[mask]
         now = now[mask]
         now2 = now2[mask]
@@ -141,6 +140,7 @@ class FGCLTrainer1(NodeFullBatchTrainer):
 
         loss3 = self.contrast_model(globalOne, now, extra_pos_mask=extra_pos_mask,extra_neg_mask=extra_neg_mask)
         loss3 = self.contrast_model(now2,now,extra_pos_mask=extra_pos_mask,extra_neg_mask=extra_neg_mask)
+
         # raw_feature_local_list = list()
         # for clazz in range(int(ctx.cfg.model.out_channels)):
         #     temp = raw_feature_local[ clazz == label ] / (raw_feature_local[ clazz == label ].norm(dim=-1,keepdim=True) + 1e-6)
@@ -163,7 +163,8 @@ class FGCLTrainer1(NodeFullBatchTrainer):
         #
         # N_tensor = torch.ones(graph_level_global.shape[0]).to(ctx.device)
         # cos_loss = cos(graph_level_global, graph_level_local, N_tensor)
-        ctx.loss_batch = loss1 + loss3 * 3
+        ctx.loss_batch = loss1 + loss_ff * 0.1
+
 
 
         ctx.batch_size = torch.sum(mask).item()
@@ -377,7 +378,7 @@ class FGCLTrainer3(GraphMiniBatchTrainer):
 
             struct_kd = com_distillation_loss(pred_aug_global, pred_aug_local, adj_orig, adj_orig, 3)
             simi_kd_loss = simi_kd(pred_aug_global, pred_aug_local, batch.edge_index, 4)
-            loss_simi = simi_kd_2(adj_orig, pred_aug_local, pred_aug_global)
+
             globalOne = globalOne[mask]
             now = now[mask]
 
@@ -549,8 +550,38 @@ def com_distillation_loss(t_logits, s_logits, adj_orig, adj_sampled, temp):
     return kd_loss
 
 
+def simi_kd_2(adj_orig, feats, out):
+    tau = 0.1
 
+    adj = torch.triu(adj_orig)
+    edge_idx = (adj + adj.T).nonzero().t()
+    feats = F.softmax(feats / tau, dim=-1)
+    out = F.softmax(out / tau, dim=-1)
 
+    src = edge_idx[0]
+    dst = edge_idx[1]
+
+    _1 = torch.cosine_similarity(feats[src], feats[dst], dim=-1)
+    _2 = torch.cosine_similarity(out[src], out[dst], dim=-1)
+
+    loss = F.kl_div(_1, _2)
+    return loss
+
+def edge_distribution_high(edge_idx, feats, out):
+
+    tau =0.1
+    src = edge_idx[0]
+    dst = edge_idx[1]
+    criterion_t = torch.nn.KLDivLoss(reduction="batchmean", log_target=True)
+
+    feats_abs = torch.abs(feats[src] - feats[dst])
+    e_softmax = F.log_softmax(feats_abs / tau, dim=-1)
+
+    out_1 = torch.abs(out[src] - out[dst])
+    e_softmax_2 = F.log_softmax(out_1 / tau, dim=-1)
+
+    loss_s = criterion_t(e_softmax, e_softmax_2)
+    return loss_s
 def simi_kd(global_nodes, local_nodes, edge_index, temp):
     adj_orig = to_dense_adj(edge_index).squeeze(0)
     adj_orig.fill_diagonal_(True)
@@ -570,22 +601,6 @@ def simi_kd(global_nodes, local_nodes, edge_index, temp):
 
     return kd_loss
 
-def simi_kd_2(adj_orig, feats, out):
-    tau = 0.1
-
-    adj = torch.triu(adj_orig)
-    edge_idx = (adj + adj.T).nonzero().t()
-    feats = F.softmax(feats / tau, dim=-1)
-    out = F.softmax(out / tau, dim=-1)
-
-    src = edge_idx[0]
-    dst = edge_idx[1]
-
-    _1 = torch.cosine_similarity(feats[src], feats[dst], dim=-1)
-    _2 = torch.cosine_similarity(out[src], out[dst], dim=-1)
-
-    loss = F.kl_div(_1, _2)
-    return loss
 
 class Correlation(nn.Module):
     """Similarity-preserving loss. My origianl own reimplementation

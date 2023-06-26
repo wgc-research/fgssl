@@ -1,6 +1,7 @@
 # FGSSL
 
->
+>Federated Graph Semantic and Structural Learning
+>Wenke Huang, Guancheng Wan, Mang Ye, Bo Du
 
 ## Abstract
 
@@ -9,5 +10,9 @@ Federated graph learning collaboratively learns a global graph neural network wi
 ## Citation
 
 ``` latex
+@article{huangfederated,
+  title={Federated Graph Semantic and Structural Learning},
+  author={Huang, Wenke and Wan, Guancheng and Ye, Mang and Du, Bo}
+}
 ```
 
