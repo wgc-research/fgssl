@@ -377,7 +377,7 @@ class FGCLTrainer3(GraphMiniBatchTrainer):
 
             struct_kd = com_distillation_loss(pred_aug_global, pred_aug_local, adj_orig, adj_orig, 3)
             simi_kd_loss = simi_kd(pred_aug_global, pred_aug_local, batch.edge_index, 4)
-
+            loss_simi = simi_kd_2(adj_orig, pred_aug_local, pred_aug_global)
             globalOne = globalOne[mask]
             now = now[mask]
 
@@ -570,6 +570,22 @@ def simi_kd(global_nodes, local_nodes, edge_index, temp):
 
     return kd_loss
 
+def simi_kd_2(adj_orig, feats, out):
+    tau = 0.1
+
+    adj = torch.triu(adj_orig)
+    edge_idx = (adj + adj.T).nonzero().t()
+    feats = F.softmax(feats / tau, dim=-1)
+    out = F.softmax(out / tau, dim=-1)
+
+    src = edge_idx[0]
+    dst = edge_idx[1]
+
+    _1 = torch.cosine_similarity(feats[src], feats[dst], dim=-1)
+    _2 = torch.cosine_similarity(out[src], out[dst], dim=-1)
+
+    loss = F.kl_div(_1, _2)
+    return loss
 
 class Correlation(nn.Module):
     """Similarity-preserving loss. My origianl own reimplementation
