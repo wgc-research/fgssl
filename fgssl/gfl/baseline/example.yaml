@@ -1,0 +1,83 @@
+# Whether to use GPU
+use_gpu: True
+
+# Deciding which GPU to use
+device: 2
+
+# Federate learning related options
+federate:
+  # `standalone` or `distributed`
+  mode: standalone
+  # Evaluate in Server or Client test set
+  make_global_eval: True
+  # Number of dataset being split
+  client_num: 5
+  # Number of communication round
+  total_round_num: 200
+  method: fgcl
+# Dataset related options
+data:
+  # Root directory where the data stored
+  root: data/
+  splits: [0.6, 0.2, 0.2]
+  # Dataset name
+  type: citeseer
+  # Use Louvain algorithm to split `Cora`
+  splitter: 'louvain'
+dataloader:
+  # Type of sampler
+  type: pyg
+  # Use fullbatch training, batch_size should be `1`
+  batch_size: 1
+# Model related options
+model:
+  # Model type
+  type: gnn_mygat
+  # Hidden dim
+  hidden: 128
+  # Dropout rate
+  dropout: 0.5
+  # Number of Class of `Cora`
+  out_channels: 6
+  layer: 2
+# Criterion related options
+criterion:
+  # Criterion type
+  type: CrossEntropyLoss
+
+# Trainer related options
+trainer:
+  # Trainer type
+  type: fgcl1
+seed:
+  12345
+# Train related options
+train:
+  # Number of local update steps
+  local_update_steps: 4
+  # Optimizer related options
+  optimizer:
+    # Learning rate
+    lr: 5
+    # Weight decay
+    weight_decay: 0.0005
+    # Optimizer type
+    type: SGD
+#  scheduler:
+##    type: myscheduler
+grad:
+  grad_clip: 0.01
+#hpo:
+#  scheduler: sha
+#  num_workers: 3
+#  init_cand_num: 3
+#  ss: toy_hpo_ss.yaml
+#  sha:
+#    budgets: [1, 1]
+# Evaluation related options
+eval:
+  # Frequency of evaluation
+  freq: 1
+  best_res_update_round_wise_key: 'val_loss'
+  # Evaluation metrics, accuracy and number of correct items
+  metrics: ['acc', 'correct']
